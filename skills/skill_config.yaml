@@ -1,0 +1,39 @@
+# ASR Skill Configuration
+# This file defines the ASR skill for OpenClaw
+
+name: "asr"
+version: "1.0.0"
+description: "语音转文字技能 - 使用轻量级 ASR 模型实现端侧语音识别"
+author: "ASR Team"
+
+# 技能入口
+entry_point: "skills.asr_skill:ASRSkill"
+
+# 命令定义
+commands:
+  - name: "transcribe"
+    description: "将语音文件转换为文字"
+    parameters:
+      - name: "audio_file"
+        type: "string"
+        description: "音频文件路径"
+        required: true
+
+  - name: "recognize"
+    description: "识别语音并返回文字"
+    parameters:
+      - name: "audio"
+        type: "binary"
+        description: "音频文件字节数据"
+        required: true
+
+# 模型配置
+model:
+  engine: "sherpa-onnx"
+  language: "zh,en"
+  sample_rate: 16000
+
+# 资源限制
+resources:
+  memory: "512MB"
+  cpu: "2 cores"

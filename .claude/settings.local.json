@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python3 -m py_compile /home/admin/dev/asr/src/audio_processor.py 2>&1)",
+      "Bash(python3 -m py_compile /home/admin/dev/asr/src/asr_engine.py 2>&1)",
+      "Bash(python3 -m py_compile /home/admin/dev/asr/skills/asr_skill.py 2>&1)",
+      "Bash(python3 -m py_compile /home/admin/dev/asr/skills/skill_runner.py 2>&1)",
+      "Bash(python3 -m py_compile /home/admin/dev/asr/asr/__init__.py 2>&1)",
+      "Bash(python3 -m py_compile /home/admin/dev/asr/src/audio_processor.py && python3 -m py_compile /home/admin/dev/asr/src/asr_engine.py && python3 -m py_compile /home/admin/dev/asr/skills/asr_skill.py && echo \"所有文件语法检查通过\")",
+      "Bash(which uv:*)",
+      "Bash(uv venv:*)",
+      "Bash(source .venv/bin/activate && uv pip install -r requirements.txt 2>&1)",
+      "Bash(source .venv/bin/activate && python3 -c \"\nfrom src.audio_processor import AudioProcessor\nfrom src.asr_engine import ASRConfig, ModelDownloader\n\nprint\\('模块导入成功!'\\)\nprint\\(f'AudioProcessor 目标采样率：{AudioProcessor.TARGET_SAMPLE_RATE}Hz'\\)\n\nconfig = ASRConfig\\(\\)\nprint\\(f'模型名称：{config.MODEL_NAME}'\\)\nprint\\(f'模型路径：{config.get_model_path\\(\\)}'\\)\nprint\\(f'模型是否存在：{config.get_model_path\\(\\).exists\\(\\)}'\\)\n\")",
+      "WebFetch(domain:github.com)",
+      "Bash(curl -sL \"https://k2-fsa.github.io/sherpa/onnx/pretrained_models/index.html\" 2>&1 | grep -i \"zipformer\\\\|multilingual\" | head -20)",
+      "Bash(/home/admin/dev/asr/.venv/bin/pip list:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
