@@ -38,6 +38,14 @@ models/*.tar.bz2
 models/*/encoder-epoch-*.onnx
 models/*/decoder-epoch-*.onnx
 models/*/joiner-epoch-*.onnx
+models/*.md
+models/*.model
+models/*.vocab
+models/*.txt
+models/*/tokens.txt
+models/*/bpe.model
+models/*/bpe.vocab
+models/*/README.md
 
 # Test
 *.wav
