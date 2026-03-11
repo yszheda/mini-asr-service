@@ -1,5 +1,17 @@
 """
 Skill 运行器 - 用于 OpenClaw 调用 ASR 技能
+
+使用方法：
+    from skills.skill_runner import run_skill
+
+    # 转录音频文件
+    result = run_skill("transcribe", audio_file="audio.wav")
+
+    # 识别音频字节
+    result = run_skill("recognize", audio=audio_bytes)
+
+    # 语音转文字并回答（需要 API Key）
+    result = run_skill("ask", audio_file="question.wav", api_key="xxx")
 """
 
 import os
@@ -41,6 +53,15 @@ class SkillRuntime:
                 return {"success": False, "error": "缺少 audio 参数"}
             return self.skill.transcribe(audio)
 
+        elif command == "ask":
+            # 语音转文字并回答
+            audio_input = kwargs.get("audio_file") or kwargs.get("audio")
+            if not audio_input:
+                return {"success": False, "error": "缺少 audio_file 或 audio 参数"}
+            api_key = kwargs.get("api_key")
+            model = kwargs.get("model")
+            return self.skill.transcribe_and_respond(audio_input, api_key=api_key, model=model)
+
         else:
             return {"success": False, "error": f"未知命令：{command}"}
 
@@ -64,10 +85,16 @@ def run_skill(command: str, **kwargs) -> dict:
 
     Args:
         command: 命令名称
+          - "transcribe": 转录音频文件
+          - "recognize": 识别音频字节数据
+          - "ask": 语音转文字并使用 Claude 回答
         **kwargs: 命令参数
+          - audio_file: 音频文件路径（用于 transcribe/ask）
+          - audio: 音频字节数据（用于 recognize/ask）
+          - api_key: Anthropic API Key（用于 ask）
 
     Returns:
-        执行结果
+        执行结果字典
     """
     runtime = get_runtime()
     return runtime.execute(command, **kwargs)
