@@ -1,4 +1,11 @@
+# 核心依赖
 sherpa-onnx>=1.10.0
 numpy>=1.20.0
 soundfile>=0.12.0
 resampy>=0.4.0
+
+# 系统监控（用于内存检查）
+psutil>=5.9.0
+
+# Claude API（用于语音问答）
+# anthropic>=0.28.0  # 按需安装
