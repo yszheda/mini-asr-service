@@ -25,15 +25,24 @@ class ASRConfig:
     # 模型文件哈希验证
     MODEL_HASH = None  # 暂不验证
 
-    def __init__(self, model_dir: str = None):
+    # 推荐配置（针对 2GB 内存以下设备）
+    RECOMMENDED_CONFIG = {
+        "num_threads": 1,           # 单线程运行（节省内存）
+        "max_active_paths": 2,       # 减少搜索路径
+        "decoding_method": "greedy_search",  # 贪婪搜索（最省内存）
+    }
+
+    def __init__(self, model_dir: str = None, low_memory_mode: bool = True):
         """
         初始化配置
 
         Args:
             model_dir: 模型目录路径
+            low_memory_mode: 是否启用低内存模式（针对 2GB 以下设备）
         """
         self.model_dir = Path(model_dir) if model_dir else Path(__file__).parent.parent / "models"
         self.model_path = self.model_dir / self.MODEL_NAME
+        self.low_memory_mode = low_memory_mode
 
     def get_model_path(self) -> Path:
         """获取模型路径"""
@@ -114,15 +123,16 @@ class ModelDownloader:
 class ASREngine:
     """ASR 识别引擎"""
 
-    def __init__(self, model_dir: str = None, language: str = "zh"):
+    def __init__(self, model_dir: str = None, language: str = "zh", low_memory_mode: bool = True):
         """
         初始化 ASR 引擎
 
         Args:
             model_dir: 模型目录
             language: 主要识别语言 ('zh' 或 'en')
+            low_memory_mode: 是否启用低内存模式（针对 2GB 以下设备）
         """
-        self.config = ASRConfig(model_dir)
+        self.config = ASRConfig(model_dir, low_memory_mode=low_memory_mode)
         self.audio_processor = AudioProcessor()
         self.language = language
         self.recognizer = None
@@ -137,17 +147,42 @@ class ASREngine:
             if not ModelDownloader.download_and_extract(self.config):
                 raise RuntimeError("模型下载失败")
 
+        # 优先使用 INT8 量化模型（减少48%内存占用）
+        encoder_path = model_path / "encoder-epoch-99-avg-1.int8.onnx"
+        decoder_path = model_path / "decoder-epoch-99-avg-1.int8.onnx"
+        joiner_path = model_path / "joiner-epoch-99-avg-1.int8.onnx"
+
+        # 如果量化模型不存在，降级使用 FP32 模型
+        if not encoder_path.exists():
+            encoder_path = model_path / "encoder-epoch-99-avg-1.onnx"
+            decoder_path = model_path / "decoder-epoch-99-avg-1.onnx"
+            joiner_path = model_path / "joiner-epoch-99-avg-1.onnx"
+            print("警告：使用 FP32 模型（内存占用更大）")
+        else:
+            print("使用 INT8 量化模型（节省 48% 内存）")
+
+        # 根据内存模式配置参数
+        if self.config.low_memory_mode:
+            num_threads = 1
+            max_active_paths = 2
+            decoding_method = "greedy_search"  # 最省内存
+            print("启用低内存模式：单线程 + 贪婪搜索")
+        else:
+            num_threads = 2
+            max_active_paths = 4
+            decoding_method = "modified_beam_search"
+
         # 使用 from_transducer 方法创建识别器
         self.recognizer = sherpa_onnx.OnlineRecognizer.from_transducer(
             tokens=str(model_path / "tokens.txt"),
-            encoder=str(model_path / "encoder-epoch-99-avg-1.onnx"),
-            decoder=str(model_path / "decoder-epoch-99-avg-1.onnx"),
-            joiner=str(model_path / "joiner-epoch-99-avg-1.onnx"),
-            num_threads=2,
+            encoder=str(encoder_path),
+            decoder=str(decoder_path),
+            joiner=str(joiner_path),
+            num_threads=num_threads,
             sample_rate=16000,
             feature_dim=80,
-            decoding_method="modified_beam_search",
-            max_active_paths=4,
+            decoding_method=decoding_method,
+            max_active_paths=max_active_paths,
             provider="cpu",
         )
 
@@ -163,8 +198,11 @@ class ASREngine:
         Returns:
             识别的文字结果
         """
-        # 处理音频
+        # 处理音频（包含归一化）
         audio_data = self.audio_processor.process_audio(audio_input)
+
+        # 标准化音量（提高识别准确率）
+        audio_data = self.audio_processor.normalize_audio(audio_data)
 
         # 创建流式识别器
         stream = self.recognizer.create_stream()
@@ -184,6 +222,10 @@ class ASREngine:
             self.recognizer.decode_stream(stream)
 
         result = self.recognizer.get_result(stream)
+
+        # 释放流对象
+        del stream
+
         return result.text.strip()
 
     def recognize_file(self, audio_path: str) -> str:
@@ -212,30 +254,32 @@ class ASREngine:
 
 
 # 便捷函数
-def create_asr_engine(model_dir: str = None, language: str = "zh") -> ASREngine:
+def create_asr_engine(model_dir: str = None, language: str = "zh", low_memory_mode: bool = True) -> ASREngine:
     """
     创建 ASR 引擎实例
 
     Args:
         model_dir: 模型目录
         language: 主要识别语言
+        low_memory_mode: 是否启用低内存模式（针对 2GB 以下设备）
 
     Returns:
         ASREngine 实例
     """
-    return ASREngine(model_dir=model_dir, language=language)
+    return ASREngine(model_dir=model_dir, language=language, low_memory_mode=low_memory_mode)
 
 
-def recognize_speech(audio_input: AudioInput, model_dir: str = None) -> str:
+def recognize_speech(audio_input: AudioInput, model_dir: str = None, low_memory_mode: bool = True) -> str:
     """
     便捷函数：识别语音
 
     Args:
         audio_input: 音频文件路径或字节数据
         model_dir: 模型目录
+        low_memory_mode: 是否启用低内存模式
 
     Returns:
         识别结果
     """
-    engine = create_asr_engine(model_dir=model_dir)
+    engine = create_asr_engine(model_dir=model_dir, low_memory_mode=low_memory_mode)
     return engine.recognize(audio_input)

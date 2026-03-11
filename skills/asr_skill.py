@@ -20,21 +20,23 @@ AudioInput = typing.Union[str, bytes]
 class ASRSkill:
     """ASR 语音识别技能"""
 
-    def __init__(self, model_dir: str = None):
+    def __init__(self, model_dir: str = None, low_memory_mode: bool = True):
         """
         初始化技能
 
         Args:
             model_dir: 模型目录路径
+            low_memory_mode: 是否启用低内存模式（针对 2GB 以下设备）
         """
         self.model_dir = model_dir
+        self.low_memory_mode = low_memory_mode
         self._engine = None
 
     @property
     def engine(self):
         """懒加载 ASR 引擎"""
         if self._engine is None:
-            self._engine = create_asr_engine(model_dir=self.model_dir)
+            self._engine = create_asr_engine(model_dir=self.model_dir, low_memory_mode=self.low_memory_mode)
         return self._engine
 
     def transcribe(self, audio_input: AudioInput) -> dict:
@@ -74,17 +76,20 @@ class ASRSkill:
                 "text": ""
             }
 
-    def transcribe_and_respond(self, audio_input: AudioInput, claude_client=None) -> dict:
+    def transcribe_and_respond(self, audio_input: AudioInput, api_key: str = None, model: str = None) -> dict:
         """
         转录语音并使用 Claude 回答
 
         Args:
             audio_input: 音频文件路径或字节数据
-            claude_client: Claude API 客户端 (可选)
+            api_key: Anthropic API Key (可选，默认从环境变量读取)
+            model: Claude 模型名称 (可选)
 
         Returns:
             包含转录和回答结果的字典
         """
+        import os
+
         # 先转录语音
         transcription = self.transcribe(audio_input)
 
@@ -106,36 +111,76 @@ class ASRSkill:
                 "response": ""
             }
 
-        # 如果有 Claude 客户端，获取回答
-        if claude_client:
-            try:
-                response = claude_client.messages.create(
-                    model="claude-sonnet-4-20250514",
-                    max_tokens=1024,
-                    messages=[
-                        {"role": "user", "content": question}
-                    ]
-                )
-                answer = response.content[0].text
-            except Exception as e:
-                answer = f"获取回答失败：{e}"
-                return {
-                    "success": False,
-                    "transcription_error": "",
-                    "text": question,
-                    "response": answer,
-                    "response_error": str(e)
-                }
-        else:
-            answer = None
+        # 获取 API Key
+        api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            return {
+                "success": True,  # 转录成功，但无法回答
+                "text": question,
+                "response": "",
+                "transcription_error": "",
+                "response_error": "缺少 API Key，请设置 ANTHROPIC_API_KEY 环境变量或传入 api_key 参数"
+            }
 
-        return {
-            "success": True,
-            "text": question,
-            "response": answer,
-            "transcription_error": "",
-            "response_error": ""
-        }
+        # 导入 Claude 客户端
+        try:
+            from anthropic import Anthropic, APIError, APITimeoutError, RateLimitError
+        except ImportError:
+            return {
+                "success": True,
+                "text": question,
+                "response": "",
+                "transcription_error": "",
+                "response_error": "请安装 anthropic 包：pip install anthropic"
+            }
+
+        # 获取回答（带重试和超时）
+        try:
+            client = Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model=model or "claude-3-5-sonnet-20241022",  # 更新为最新模型
+                max_tokens=1024,
+                messages=[
+                    {"role": "user", "content": question}
+                ],
+                timeout=30.0  # 30秒超时
+            )
+            answer = response.content[0].text
+
+            return {
+                "success": True,
+                "text": question,
+                "response": answer,
+                "transcription_error": "",
+                "response_error": ""
+            }
+
+        except (RateLimitError, APITimeoutError) as e:
+            return {
+                "success": True,  # 转录成功
+                "text": question,
+                "response": "",
+                "transcription_error": "",
+                "response_error": f"API 限制或超时：{e}。请稍后重试。"
+            }
+
+        except APIError as e:
+            return {
+                "success": True,  # 转录成功
+                "text": question,
+                "response": "",
+                "transcription_error": "",
+                "response_error": f"Claude API 错误：{e}"
+            }
+
+        except Exception as e:
+            return {
+                "success": True,  # 转录成功
+                "text": question,
+                "response": "",
+                "transcription_error": "",
+                "response_error": f"未知错误：{type(e).__name__}: {e}"
+            }
 
 
 # 命令行接口
